@@ -3,10 +3,10 @@ import requests
 import json
 from dotenv import load_dotenv
 import sys
+import time
 
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
-    'Content-Type': 'application/json'
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0'
 }
 
 
@@ -42,52 +42,68 @@ def login(url, email, password):
     print(f"登录URL: {url}")
     print(f"登录邮箱: {email}")
     
-    # 使用JSON格式发送数据
-    json_data = {
+    # 根据浏览器请求，使用表单格式发送数据
+    form_data = {
         'email': email,
-        'passwd': password
+        'password': password
     }
     
+    # 使用表单格式的请求头
+    request_headers = headers.copy()
+    request_headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    request_headers['Origin'] = 'https://fljc.cc'
+    request_headers['Referer'] = 'https://fljc.cc/auth/login'
+    
     try:
-        # 使用json参数自动序列化并设置Content-Type
-        response = requests.post(url=url, json=json_data, headers=headers, timeout=30)
+        # 使用data参数发送表单数据
+        response = requests.post(url=url, data=form_data, headers=request_headers, timeout=30)
         print(f"登录响应状态码: {response.status_code}")
-        
-        # 打印响应头，帮助调试
-        print(f"响应头: {dict(response.headers)}")
         
         if response.status_code != 200:
             print(f"❌ 登录失败 - 状态码异常: {response.status_code}")
             print(f"响应内容: {response.text}")
-            # 尝试解析错误信息
-            try:
-                error_data = json.loads(response.text)
-                print(f"错误详情: {error_data}")
-            except:
-                pass
             return None
         
         try:
             data = json.loads(response.text)
-            if 'token' in data:
-                print(f"✅ 登录成功")
-                print(f"获取到Token (前20位): {data['token'][:20]}...")
-                return data['token']
+            
+            # 根据浏览器请求成功的经验，响应中可能有auth_data
+            if 'auth_data' in data:
+                token = data['auth_data']
+                print(f"✅ 登录成功 (auth_data)")
+                print(f"获取到Token (前20位): {token[:20]}...")
+                return token
+            elif 'data' in data and 'auth_data' in data['data']:
+                token = data['data']['auth_data']
+                print(f"✅ 登录成功 (data.auth_data)")
+                print(f"获取到Token (前20位): {token[:20]}...")
+                return token
             elif 'data' in data and 'token' in data['data']:
-                print(f"✅ 登录成功")
-                print(f"获取到Token (前20位): {data['data']['token'][:20]}...")
-                return data['data']['token']
+                token = data['data']['token']
+                print(f"✅ 登录成功 (data.token)")
+                print(f"获取到Token (前20位): {token[:20]}...")
+                return token
+            elif 'token' in data:
+                token = data['token']
+                print(f"✅ 登录成功 (token)")
+                print(f"获取到Token (前20位): {token[:20]}...")
+                return token
             elif 'access_token' in data:
-                print(f"✅ 登录成功")
-                print(f"获取到Token (前20位): {data['access_token'][:20]}...")
-                return data['access_token']
+                token = data['access_token']
+                print(f"✅ 登录成功 (access_token)")
+                print(f"获取到Token (前20位): {token[:20]}...")
+                return token
             else:
-                print(f"❌ 登录失败 - 响应中未找到token")
+                print(f"❌ 登录失败 - 响应中未找到token或auth_data")
                 print(f"完整响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
-                # 检查其他可能的字段
-                for key in data:
-                    print(f"响应字段: {key} = {data[key]}")
+                
+                # 打印所有可能的字段
+                print("响应中的所有字段:")
+                for key, value in data.items():
+                    print(f"  {key}: {value}")
+                
                 return None
+                
         except json.JSONDecodeError as e:
             print(f"❌ 登录失败 - JSON解析错误: {e}")
             print(f"原始响应: {response.text[:500]}")
@@ -110,24 +126,33 @@ def checkin(url, token):
     print("开始签到...")
     print(f"签到URL: {url}")
     
+    # 获取当前时间戳（毫秒）
+    current_timestamp = int(time.time() * 1000)
+    # 更新URL中的时间戳参数
+    url = url.replace('t=1765504800371', f't={current_timestamp}')
+    
     headers_copy = headers.copy()
     headers_copy['Access-Token'] = token
+    headers_copy['Referer'] = 'https://fljc.cc/user'
     
     try:
-        response = requests.get(url=url, headers=headers_copy, timeout=30)
+        response = requests.post(url=url, headers=headers_copy, timeout=30)
         print(f"签到响应状态码: {response.status_code}")
         
         try:
             data = json.loads(response.text)
+            print(f"签到响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
+            
             if 'result' in data:
                 print(f"✅ 签到结果: {data['result']}")
+            elif 'msg' in data:
+                print(f"✅ 签到消息: {data['msg']}")
             else:
-                print(f"⚠️ 签到响应中未找到result字段")
-                print(f"完整响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
-            
+                print(f"⚠️ 签到响应中未找到result或msg字段")
+                
             # 如果有额外信息也打印出来
-            if 'msg' in data:
-                print(f"提示信息: {data['msg']}")
+            if 'data' in data:
+                print(f"签到数据: {data['data']}")
                 
         except json.JSONDecodeError as e:
             print(f"❌ 签到响应解析失败: {e}")
@@ -147,8 +172,14 @@ def get_user_info(url, token):
     print("获取用户信息...")
     print(f"用户信息URL: {url}")
     
+    # 获取当前时间戳（毫秒）
+    current_timestamp = int(time.time() * 1000)
+    # 更新URL中的时间戳参数
+    url = url.replace('t=1765504800371', f't={current_timestamp}')
+    
     headers_copy = headers.copy()
     headers_copy['Access-Token'] = token
+    headers_copy['Referer'] = 'https://fljc.cc/user'
     
     try:
         response = requests.get(url=url, headers=headers_copy, timeout=30)
@@ -156,6 +187,7 @@ def get_user_info(url, token):
         
         try:
             data = json.loads(response.text)
+            print(f"用户信息响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
             
             if 'result' in data and 'data' in data['result']:
                 user_data = data['result']['data']
@@ -184,7 +216,6 @@ def get_user_info(url, token):
                 return user_data
             else:
                 print("❌ 用户信息获取失败 - 响应格式异常")
-                print(f"完整响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
                 return None
                 
         except json.JSONDecodeError as e:
@@ -210,30 +241,34 @@ def convert_traffic(url, token, traffic):
     print(f"转换URL: {url}")
     print(f"转换流量: {traffic} MB")
     
+    # 获取当前时间戳（毫秒）
+    current_timestamp = int(time.time() * 1000)
+    # 更新URL中的时间戳参数
+    url = url.replace('t=1765504800371', f't={current_timestamp}')
+    
     headers_copy = headers.copy()
     headers_copy['Access-Token'] = token
+    headers_copy['Referer'] = 'https://fljc.cc/user'
     
-    # 对于流量转换，通常也需要JSON格式
-    json_data = {
+    # 对于流量转换，使用GET请求并传递参数
+    params = {
         'traffic': str(traffic)
     }
     
     try:
-        # 使用json参数发送JSON数据
-        response = requests.get(url=url, headers=headers_copy, params=json_data, timeout=30)
+        response = requests.get(url=url, headers=headers_copy, params=params, timeout=30)
         print(f"流量转换响应状态码: {response.status_code}")
         
         try:
             data = json.loads(response.text)
+            print(f"流量转换响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
+            
             if 'msg' in data:
                 print(f"✅ 流量转换结果: {data['msg']}")
+            elif 'result' in data:
+                print(f"✅ 流量转换结果: {data['result']}")
             else:
-                print(f"⚠️ 流量转换响应中未找到msg字段")
-                print(f"完整响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
-                
-            # 如果有额外信息也打印出来
-            if 'result' in data:
-                print(f"转换详情: {data['result']}")
+                print(f"⚠️ 流量转换响应中未找到msg或result字段")
                 
         except json.JSONDecodeError as e:
             print(f"❌ 流量转换响应解析失败: {e}")
@@ -255,12 +290,16 @@ def main():
     # 加载环境变量
     env = load_env()
     
-    # 构建URL
+    # 构建URL - 使用当前时间戳
     base_url = env['BASE_URL'].rstrip('/')
-    login_url = env['BASE_URL'] + '/api/v1/passport/auth/login?t=1765504173808'
-    checkin_url = env['BASE_URL'] + '/api/v1/user/checkin?t=1765504800371'
-    user_info_url = env['BASE_URL'] + '/api/v1/user/info?t=1765504800371'
-    convert_traffic_url = env['BASE_URL'] + '/api/v1/user/koukanntraffic?t=1765504800371'
+    
+    # 获取当前时间戳（毫秒）
+    current_timestamp = int(time.time() * 1000)
+    
+    login_url = f"{base_url}/api/v1/passport/auth/login?t={current_timestamp}"
+    checkin_url = f"{base_url}/api/v1/user/checkin?t={current_timestamp}"
+    user_info_url = f"{base_url}/api/v1/user/info?t={current_timestamp}"
+    convert_traffic_url = f"{base_url}/api/v1/user/koukanntraffic?t={current_timestamp}"
     
     email = env['EMAIL']
     password = env['PASSWORD']
@@ -282,11 +321,13 @@ def main():
     
     # 转换流量
     if 'transfer_checkin' in data:
-        traffic = int(int(data['transfer_checkin']) / 1024 / 1024)
-        print(f"\n📊 签到获得的剩余流量: {traffic} MB")
+        # 注意：transfer_checkin 单位是字节，转换为MB
+        traffic_bytes = int(data['transfer_checkin'])
+        traffic_mb = int(traffic_bytes / 1024 / 1024)
+        print(f"\n📊 签到获得的剩余流量: {traffic_bytes} 字节 = {traffic_mb} MB")
         
-        if traffic > 0:
-            convert_traffic(url=convert_traffic_url, token=token, traffic=traffic)
+        if traffic_mb > 0:
+            convert_traffic(url=convert_traffic_url, token=token, traffic=traffic_mb)
         else:
             print("🎉 没有需要转换的流量，明天再来吧！")
     else:
