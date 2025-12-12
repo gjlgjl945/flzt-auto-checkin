@@ -20,10 +20,14 @@ def login(url, email, password):
         'passwd': password
     }
     response = requests.post(url=url, data=data, headers=headers)
+    print(f"登录响应状态码: {response.status_code}")
     if response.status_code != 200:
+        print(f"❌ 登录失败 - 状态码异常: {response.status_code}")
+        print(f"响应内容: {response.text[:200]}...")
         return None
     try:
         data = json.loads(response.text)
+        print(f"✅ 登录成功")
         return data['token']
     except:
         print('登录失败')
