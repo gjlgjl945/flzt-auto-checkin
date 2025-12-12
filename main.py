@@ -66,42 +66,17 @@ def login(url, email, password):
         
         try:
             data = json.loads(response.text)
+            print(f"登录响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
             
-            # 根据浏览器请求成功的经验，响应中可能有auth_data
-            if 'auth_data' in data:
-                token = data['auth_data']
-                print(f"✅ 登录成功 (auth_data)")
-                print(f"获取到Token (前20位): {token[:20]}...")
-                return token
-            elif 'data' in data and 'auth_data' in data['data']:
-                token = data['data']['auth_data']
-                print(f"✅ 登录成功 (data.auth_data)")
-                print(f"获取到Token (前20位): {token[:20]}...")
-                return token
-            elif 'data' in data and 'token' in data['data']:
-                token = data['data']['token']
-                print(f"✅ 登录成功 (data.token)")
-                print(f"获取到Token (前20位): {token[:20]}...")
-                return token
-            elif 'token' in data:
-                token = data['token']
-                print(f"✅ 登录成功 (token)")
-                print(f"获取到Token (前20位): {token[:20]}...")
-                return token
-            elif 'access_token' in data:
-                token = data['access_token']
-                print(f"✅ 登录成功 (access_token)")
-                print(f"获取到Token (前20位): {token[:20]}...")
-                return token
+            # 根据提供的响应格式，优先获取 auth_data
+            if 'data' in data and 'auth_data' in data['data']:
+                auth_data = data['data']['auth_data']
+                print(f"✅ 登录成功")
+                print(f"获取到Auth Data: {auth_data}")
+                return auth_data
             else:
-                print(f"❌ 登录失败 - 响应中未找到token或auth_data")
-                print(f"完整响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
-                
-                # 打印所有可能的字段
-                print("响应中的所有字段:")
-                for key, value in data.items():
-                    print(f"  {key}: {value}")
-                
+                print(f"❌ 登录失败 - 响应中未找到auth_data")
+                print(f"响应结构: {data}")
                 return None
                 
         except json.JSONDecodeError as e:
@@ -120,19 +95,14 @@ def login(url, email, password):
         return None
 
 
-def checkin(url, token):
+def checkin(url, auth_data):
     """执行签到"""
     print("\n" + "=" * 50)
     print("开始签到...")
     print(f"签到URL: {url}")
     
-    # 获取当前时间戳（毫秒）
-    current_timestamp = int(time.time() * 1000)
-    # 更新URL中的时间戳参数
-    url = url.replace('t=1765504800371', f't={current_timestamp}')
-    
     headers_copy = headers.copy()
-    headers_copy['Access-Token'] = token
+    headers_copy['Authorization'] = auth_data
     headers_copy['Referer'] = 'https://fljc.cc/user'
     
     try:
@@ -143,12 +113,17 @@ def checkin(url, token):
             data = json.loads(response.text)
             print(f"签到响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
             
-            if 'result' in data:
-                print(f"✅ 签到结果: {data['result']}")
+            if 'status' in data:
+                if data['status'] == 'success':
+                    print(f"✅ 签到成功!")
+                else:
+                    print(f"❌ 签到失败")
             elif 'msg' in data:
                 print(f"✅ 签到消息: {data['msg']}")
+            elif 'message' in data:
+                print(f"✅ 签到消息: {data['message']}")
             else:
-                print(f"⚠️ 签到响应中未找到result或msg字段")
+                print(f"⚠️ 签到响应中未找到状态字段")
                 
             # 如果有额外信息也打印出来
             if 'data' in data:
@@ -166,20 +141,15 @@ def checkin(url, token):
         print(f"❌ 签到失败 - 未知错误: {e}")
 
 
-def get_user_info(url, token):
+def get_user_info(url, auth_data):
     """获取用户信息"""
     print("\n" + "=" * 50)
     print("获取用户信息...")
     print(f"用户信息URL: {url}")
     
-    # 获取当前时间戳（毫秒）
-    current_timestamp = int(time.time() * 1000)
-    # 更新URL中的时间戳参数
-    url = url.replace('t=1765504800371', f't={current_timestamp}')
-    
     headers_copy = headers.copy()
-    headers_copy['Access-Token'] = token
-    headers_copy['Referer'] = 'https://fljc.cc/user'
+    headers_copy['Authorization'] = auth_data
+    headers_copy['Referer'] = 'https://fljc.cc/dashboard'
     
     try:
         response = requests.get(url=url, headers=headers_copy, timeout=30)
@@ -189,8 +159,8 @@ def get_user_info(url, token):
             data = json.loads(response.text)
             print(f"用户信息响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
             
-            if 'result' in data and 'data' in data['result']:
-                user_data = data['result']['data']
+            if 'status' in data and data['status'] == 'success' and 'data' in data:
+                user_data = data['data']
                 print("✅ 用户信息获取成功")
                 
                 # 打印关键用户信息
@@ -234,20 +204,15 @@ def get_user_info(url, token):
         return None
 
 
-def convert_traffic(url, token, traffic):
+def convert_traffic(url, auth_data, traffic):
     """转换流量"""
     print("\n" + "=" * 50)
     print("开始流量转换...")
     print(f"转换URL: {url}")
     print(f"转换流量: {traffic} MB")
     
-    # 获取当前时间戳（毫秒）
-    current_timestamp = int(time.time() * 1000)
-    # 更新URL中的时间戳参数
-    url = url.replace('t=1765504800371', f't={current_timestamp}')
-    
     headers_copy = headers.copy()
-    headers_copy['Access-Token'] = token
+    headers_copy['Authorization'] = auth_data
     headers_copy['Referer'] = 'https://fljc.cc/user'
     
     # 对于流量转换，使用GET请求并传递参数
@@ -263,12 +228,17 @@ def convert_traffic(url, token, traffic):
             data = json.loads(response.text)
             print(f"流量转换响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
             
-            if 'msg' in data:
+            if 'status' in data:
+                if data['status'] == 'success':
+                    print(f"✅ 流量转换成功!")
+                else:
+                    print(f"❌ 流量转换失败")
+            elif 'msg' in data:
                 print(f"✅ 流量转换结果: {data['msg']}")
-            elif 'result' in data:
-                print(f"✅ 流量转换结果: {data['result']}")
+            elif 'message' in data:
+                print(f"✅ 流量转换消息: {data['message']}")
             else:
-                print(f"⚠️ 流量转换响应中未找到msg或result字段")
+                print(f"⚠️ 流量转换响应中未找到状态字段")
                 
         except json.JSONDecodeError as e:
             print(f"❌ 流量转换响应解析失败: {e}")
@@ -290,7 +260,7 @@ def main():
     # 加载环境变量
     env = load_env()
     
-    # 构建URL - 使用当前时间戳
+    # 构建URL
     base_url = env['BASE_URL'].rstrip('/')
     
     # 获取当前时间戳（毫秒）
@@ -305,29 +275,33 @@ def main():
     password = env['PASSWORD']
     
     # 登录
-    token = login(url=login_url, email=email, password=password)
-    if token is None:
+    auth_data = login(url=login_url, email=email, password=password)
+    if auth_data is None:
         print("\n❌ 登录失败，脚本终止")
         return
     
-    # 签到
-    checkin(url=checkin_url, token=token)
-    
     # 获取用户信息
-    data = get_user_info(url=user_info_url, token=token)
-    if data is None:
-        print("\n⚠️ 获取用户信息失败，跳过流量转换")
+    user_data = get_user_info(url=user_info_url, auth_data=auth_data)
+    if user_data is None:
+        print("\n⚠️ 获取用户信息失败，跳过后续操作")
         return
     
+    # 签到
+    checkin(url=checkin_url, auth_data=auth_data)
+    
+    # 重新获取用户信息以获取最新的签到流量
+    print("\n重新获取用户信息以获取签到后的数据...")
+    user_data = get_user_info(url=user_info_url, auth_data=auth_data)
+    
     # 转换流量
-    if 'transfer_checkin' in data:
+    if user_data and 'transfer_checkin' in user_data:
         # 注意：transfer_checkin 单位是字节，转换为MB
-        traffic_bytes = int(data['transfer_checkin'])
+        traffic_bytes = int(user_data['transfer_checkin'])
         traffic_mb = int(traffic_bytes / 1024 / 1024)
         print(f"\n📊 签到获得的剩余流量: {traffic_bytes} 字节 = {traffic_mb} MB")
         
         if traffic_mb > 0:
-            convert_traffic(url=convert_traffic_url, token=token, traffic=traffic_mb)
+            convert_traffic(url=convert_traffic_url, auth_data=auth_data, traffic=traffic_mb)
         else:
             print("🎉 没有需要转换的流量，明天再来吧！")
     else:
