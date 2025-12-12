@@ -95,50 +95,77 @@ def login(url, email, password):
         return None
 
 
-def checkin(url, auth_data):
-    """执行签到"""
-    print("\n" + "=" * 50)
-    print("开始签到...")
-    print(f"签到URL: {url}")
-    
+def try_checkin(url, auth_data, method='POST'):
+    """尝试不同的签到接口"""
     headers_copy = headers.copy()
     headers_copy['Authorization'] = auth_data
     headers_copy['Referer'] = 'https://fljc.cc/user'
     
     try:
-        response = requests.post(url=url, headers=headers_copy, timeout=30)
-        print(f"签到响应状态码: {response.status_code}")
+        if method == 'POST':
+            response = requests.post(url=url, headers=headers_copy, timeout=30)
+        else:
+            response = requests.get(url=url, headers=headers_copy, timeout=30)
         
-        try:
-            data = json.loads(response.text)
-            print(f"签到响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
+        print(f"尝试签到 - 方法: {method}, 状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            try:
+                data = json.loads(response.text)
+                print(f"签到响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
+                return True, data
+            except json.JSONDecodeError:
+                # 可能返回的不是JSON
+                print(f"响应内容: {response.text[:200]}")
+                return False, None
+        elif response.status_code == 404:
+            print(f"接口不存在: {url}")
+            return False, None
+        else:
+            print(f"意外状态码: {response.status_code}")
+            print(f"响应内容: {response.text[:200]}")
+            return False, None
             
-            if 'status' in data:
-                if data['status'] == 'success':
-                    print(f"✅ 签到成功!")
-                else:
-                    print(f"❌ 签到失败")
-            elif 'msg' in data:
-                print(f"✅ 签到消息: {data['msg']}")
-            elif 'message' in data:
-                print(f"✅ 签到消息: {data['message']}")
-            else:
-                print(f"⚠️ 签到响应中未找到状态字段")
-                
-            # 如果有额外信息也打印出来
-            if 'data' in data:
-                print(f"签到数据: {data['data']}")
-                
-        except json.JSONDecodeError as e:
-            print(f"❌ 签到响应解析失败: {e}")
-            print(f"原始响应: {response.text[:500]}")
-            
-    except requests.exceptions.Timeout:
-        print("❌ 签到失败 - 请求超时")
-    except requests.exceptions.ConnectionError:
-        print("❌ 签到失败 - 连接错误")
     except Exception as e:
-        print(f"❌ 签到失败 - 未知错误: {e}")
+        print(f"请求异常: {e}")
+        return False, None
+
+
+def checkin(base_url, auth_data):
+    """执行签到 - 尝试多个可能的接口"""
+    print("\n" + "=" * 50)
+    print("开始签到...")
+    
+    # 获取当前时间戳（毫秒）
+    current_timestamp = int(time.time() * 1000)
+    
+    # 尝试多个可能的签到接口
+    possible_checkin_endpoints = [
+        f"{base_url}/api/v1/user/checkin?t={current_timestamp}",  # 原始尝试
+        f"{base_url}/api/v1/user/checkin",  # 不带时间戳
+        f"{base_url}/api/v1/passport/comm/checkin",  # 其他可能的路径
+        f"{base_url}/user/checkin",  # 简化路径
+        f"{base_url}/checkin",  # 更简化路径
+    ]
+    
+    # 同时尝试GET和POST方法
+    for endpoint in possible_checkin_endpoints:
+        print(f"\n尝试签到接口: {endpoint}")
+        
+        # 先尝试POST
+        success, data = try_checkin(endpoint, auth_data, method='POST')
+        if success:
+            print(f"✅ 找到签到接口: {endpoint} (POST)")
+            return True, data
+        
+        # 再尝试GET
+        success, data = try_checkin(endpoint, auth_data, method='GET')
+        if success:
+            print(f"✅ 找到签到接口: {endpoint} (GET)")
+            return True, data
+    
+    print("\n❌ 所有可能的签到接口都失败")
+    return False, None
 
 
 def get_user_info(url, auth_data):
@@ -170,18 +197,23 @@ def get_user_info(url, auth_data):
                     print(f"当前套餐: {user_data.get('plan')}")
                 if 'plan_time' in user_data:
                     print(f"套餐到期时间: {user_data.get('plan_time')}")
-                if 'money' in user_data:
-                    print(f"账户余额: {user_data.get('money')}")
+                if 'balance' in user_data:
+                    print(f"账户余额: {user_data.get('balance')}")
                 if 'transfer_enable' in user_data:
                     total = int(user_data.get('transfer_enable', 0))
-                    used = int(user_data.get('used', 0))
+                    used = int(user_data.get('used', 0)) if 'used' in user_data else 0
                     remaining = total - used
                     print(f"总流量: {total / 1024 / 1024 / 1024:.2f} GB")
                     print(f"已用流量: {used / 1024 / 1024 / 1024:.2f} GB")
                     print(f"剩余流量: {remaining / 1024 / 1024 / 1024:.2f} GB")
-                if 'transfer_checkin' in user_data:
-                    checkin_traffic = int(user_data.get('transfer_checkin', 0))
-                    print(f"签到流量: {checkin_traffic / 1024 / 1024:.2f} MB")
+                
+                # 检查可能的签到流量字段
+                checkin_fields = ['transfer_checkin', 'checkin_reward_traffic', 'checkin_traffic', 'reward_traffic']
+                for field in checkin_fields:
+                    if field in user_data:
+                        checkin_traffic = int(user_data.get(field, 0))
+                        print(f"签到流量 ({field}): {checkin_traffic / 1024 / 1024:.2f} MB")
+                        user_data['checkin_traffic'] = checkin_traffic
                 
                 return user_data
             else:
@@ -204,52 +236,74 @@ def get_user_info(url, auth_data):
         return None
 
 
-def convert_traffic(url, auth_data, traffic):
+def convert_traffic(base_url, auth_data, traffic):
     """转换流量"""
     print("\n" + "=" * 50)
     print("开始流量转换...")
-    print(f"转换URL: {url}")
     print(f"转换流量: {traffic} MB")
+    
+    # 获取当前时间戳（毫秒）
+    current_timestamp = int(time.time() * 1000)
+    
+    # 尝试多个可能的流量转换接口
+    possible_convert_endpoints = [
+        f"{base_url}/api/v1/user/koukanntraffic?t={current_timestamp}",
+        f"{base_url}/api/v1/user/koukanntraffic",
+        f"{base_url}/api/v1/user/convert/traffic",
+        f"{base_url}/api/v1/user/traffic/convert",
+        f"{base_url}/user/convert",
+    ]
     
     headers_copy = headers.copy()
     headers_copy['Authorization'] = auth_data
     headers_copy['Referer'] = 'https://fljc.cc/user'
     
-    # 对于流量转换，使用GET请求并传递参数
-    params = {
-        'traffic': str(traffic)
-    }
-    
-    try:
-        response = requests.get(url=url, headers=headers_copy, params=params, timeout=30)
-        print(f"流量转换响应状态码: {response.status_code}")
+    for endpoint in possible_convert_endpoints:
+        print(f"\n尝试流量转换接口: {endpoint}")
+        
+        # 对于流量转换，使用GET请求并传递参数
+        params = {
+            'traffic': str(traffic)
+        }
         
         try:
-            data = json.loads(response.text)
-            print(f"流量转换响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
+            response = requests.get(url=endpoint, headers=headers_copy, params=params, timeout=30)
+            print(f"流量转换响应状态码: {response.status_code}")
             
-            if 'status' in data:
-                if data['status'] == 'success':
-                    print(f"✅ 流量转换成功!")
-                else:
-                    print(f"❌ 流量转换失败")
-            elif 'msg' in data:
-                print(f"✅ 流量转换结果: {data['msg']}")
-            elif 'message' in data:
-                print(f"✅ 流量转换消息: {data['message']}")
+            if response.status_code == 200:
+                try:
+                    data = json.loads(response.text)
+                    print(f"流量转换响应: {json.dumps(data, indent=2, ensure_ascii=False)}")
+                    
+                    if 'status' in data:
+                        if data['status'] == 'success':
+                            print(f"✅ 流量转换成功!")
+                            return True
+                        else:
+                            print(f"❌ 流量转换失败")
+                    elif 'msg' in data:
+                        print(f"✅ 流量转换结果: {data['msg']}")
+                        return True
+                    elif 'message' in data:
+                        print(f"✅ 流量转换消息: {data['message']}")
+                        return True
+                    else:
+                        print(f"⚠️ 流量转换响应中未找到状态字段")
+                        
+                except json.JSONDecodeError as e:
+                    print(f"❌ 流量转换响应解析失败: {e}")
+                    print(f"原始响应: {response.text[:500]}")
+            elif response.status_code == 404:
+                print(f"接口不存在: {endpoint}")
             else:
-                print(f"⚠️ 流量转换响应中未找到状态字段")
+                print(f"意外状态码: {response.status_code}")
+                print(f"响应内容: {response.text[:200]}")
                 
-        except json.JSONDecodeError as e:
-            print(f"❌ 流量转换响应解析失败: {e}")
-            print(f"原始响应: {response.text[:500]}")
-            
-    except requests.exceptions.Timeout:
-        print("❌ 流量转换失败 - 请求超时")
-    except requests.exceptions.ConnectionError:
-        print("❌ 流量转换失败 - 连接错误")
-    except Exception as e:
-        print(f"❌ 流量转换失败 - 未知错误: {e}")
+        except Exception as e:
+            print(f"请求异常: {e}")
+    
+    print("\n❌ 所有可能的流量转换接口都失败")
+    return False
 
 
 def main():
@@ -267,9 +321,7 @@ def main():
     current_timestamp = int(time.time() * 1000)
     
     login_url = f"{base_url}/api/v1/passport/auth/login?t={current_timestamp}"
-    checkin_url = f"{base_url}/api/v1/user/checkin?t={current_timestamp}"
     user_info_url = f"{base_url}/api/v1/user/info?t={current_timestamp}"
-    convert_traffic_url = f"{base_url}/api/v1/user/koukanntraffic?t={current_timestamp}"
     
     email = env['EMAIL']
     password = env['PASSWORD']
@@ -286,26 +338,37 @@ def main():
         print("\n⚠️ 获取用户信息失败，跳过后续操作")
         return
     
-    # 签到
-    checkin(url=checkin_url, auth_data=auth_data)
+    # 尝试签到
+    checkin_success, checkin_response = checkin(base_url, auth_data)
     
-    # 重新获取用户信息以获取最新的签到流量
-    print("\n重新获取用户信息以获取签到后的数据...")
-    user_data = get_user_info(url=user_info_url, auth_data=auth_data)
-    
-    # 转换流量
-    if user_data and 'transfer_checkin' in user_data:
-        # 注意：transfer_checkin 单位是字节，转换为MB
-        traffic_bytes = int(user_data['transfer_checkin'])
-        traffic_mb = int(traffic_bytes / 1024 / 1024)
-        print(f"\n📊 签到获得的剩余流量: {traffic_bytes} 字节 = {traffic_mb} MB")
+    if checkin_success:
+        print(f"✅ 签到成功!")
         
-        if traffic_mb > 0:
-            convert_traffic(url=convert_traffic_url, auth_data=auth_data, traffic=traffic_mb)
-        else:
-            print("🎉 没有需要转换的流量，明天再来吧！")
+        # 解析签到响应
+        if checkin_response:
+            if 'data' in checkin_response and 'checkin_reward_traffic' in checkin_response['data']:
+                traffic_bytes = int(checkin_response['data']['checkin_reward_traffic'])
+                traffic_mb = int(traffic_bytes / 1024 / 1024)
+                print(f"📊 签到获得流量: {traffic_bytes} 字节 = {traffic_mb} MB")
+                
+                if traffic_mb > 0:
+                    # 等待几秒让系统处理
+                    print("等待系统处理签到数据...")
+                    time.sleep(3)
+                    
+                    # 尝试转换流量
+                    convert_success = convert_traffic(base_url, auth_data, traffic_mb)
+                    if not convert_success:
+                        print("⚠️ 流量转换失败，但签到已完成")
+            else:
+                print("⚠️ 签到响应中没有找到流量奖励信息")
     else:
-        print("⚠️ 用户信息中未找到签到流量数据")
+        print("⚠️ 签到失败，可能今天已经签到过了，或者签到接口有变化")
+    
+    # 重新获取用户信息查看最新状态
+    print("\n" + "=" * 50)
+    print("获取最新用户信息...")
+    user_data = get_user_info(url=user_info_url, auth_data=auth_data)
     
     print("\n" + "=" * 50)
     print("✅ 脚本执行完成")
