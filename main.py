@@ -230,10 +230,10 @@ def main():
     
     # 构建URL
     base_url = env['BASE_URL'].rstrip('/')
-    login_url = f"{base_url}/api/token"
-    checkin_url = f"{base_url}/api/user/checkin"
-    user_info_url = f"{base_url}/api/user/info"
-    convert_traffic_url = f"{base_url}/api/user/koukanntraffic"
+    login_url = f"{base_url}/api/v1/passport/auth/login?t=1765504173808"
+    checkin_url = f"{base_url}/api/v1/user/checkin?t=1765504174892"
+    user_info_url = f"{base_url}/api/v1/user/info?t=1765504174892"
+    convert_traffic_url = f"{base_url}/api/v1/user/koukanntraffic"
     
     email = env['EMAIL']
     password = env['PASSWORD']
